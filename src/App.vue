@@ -33,8 +33,8 @@
             >
             <div class="mt-1 relative rounded-md shadow-md">
               <input
-                @keydown.enter="add()"
                 @keydown="changedInputText()"
+                @keydown.enter="add()"
                 v-model="tricker"
                 type="text"
                 name="wallet"
@@ -53,6 +53,9 @@
                   {{ tricker.key }}
                 </button>
               </label>
+              <label v-if="error.length != 0" class="text-red-500"
+                >Такой тикер уже добавлен</label
+              >
             </div>
             <!-- <div
               class="flex bg-white shadow-md p-1 rounded-md shadow-md flex-wrap"
@@ -203,6 +206,7 @@ export default {
       graph: [],
       allTrickers: {},
       findSameTricker: [],
+      error: [],
     };
   },
   created: function () {
@@ -218,8 +222,12 @@ export default {
     fun();
   },
   methods: {
-    //https://min-api.cryptocompare.com/data/all/coinlist?summary=true
     add() {
+      this.error = this.trickers.filter((t) => t.name == this.tricker);
+      console.log(this.error);
+      if (this.error.length) {
+        return false;
+      }
       let newTricker = {
         name: this.tricker,
         price: `default`,
@@ -236,7 +244,7 @@ export default {
         }
       }, 5000);
       this.tricker = ``;
-      this.selectedSameTricker = [];
+      this.findSameTricker = [];
     },
     deleteTricker(trickerToRemove) {
       this.trickers = this.trickers.filter((t) => t != trickerToRemove);
@@ -259,11 +267,9 @@ export default {
       if (this.tricker.length == 0) {
         this.findSameTricker = [];
       }
-      if (
-        this.tricker != "" &&
-        this.tricker != "default" &&
-        this.tricker.length > 2
-      ) {
+      if (this.tricker != "" && this.tricker != "default") {
+        this.error = [];
+        this.findSameTricker = [];
         const keys = Object.keys(this.allTrickers);
         for (let i = 0; i < keys.length; i++) {
           if (keys[i].toLowerCase().indexOf(this.tricker) == 0) {
@@ -300,5 +306,3 @@ export default {
   },
 };
 </script>
-
-<style src="./assets/app.css"></style>
