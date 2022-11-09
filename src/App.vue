@@ -33,7 +33,6 @@
             >
             <div class="mt-1 relative rounded-md shadow-md">
               <input
-                @keydown="changedInputText()"
                 @keydown.enter="add()"
                 v-model="tricker"
                 type="text"
@@ -106,10 +105,30 @@
         </button>
       </section>
       <template v-if="trickers.length > 0">
+        <div class="row">
+          <label for="wallet" class="block text-sm font-medium text-gray-700"
+            >Фильтр</label
+          ><input v-model="filter" />
+          <button
+            v-if="page > 1"
+            @click="page = page - 1"
+            type="button"
+            class="my-4 mx-2 inline-flex items-center py-2 px-4 border border-transparent shadow-sm text-sm leading-4 font-medium rounded-full text-white bg-gray-600 hover:bg-gray-700 transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
+          >
+            Назад</button
+          ><button
+            v-if="hasNextPage"
+            @click="page = page + 1"
+            type="button"
+            class="my-4 mx-2 inline-flex items-center py-2 px-4 border border-transparent shadow-sm text-sm leading-4 font-medium rounded-full text-white bg-gray-600 hover:bg-gray-700 transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
+          >
+            Вперёд
+          </button>
+        </div>
         <hr class="w-full border-t border-gray-600 my-4" />
         <dl class="mt-5 grid grid-cols-1 gap-5 sm:grid-cols-3">
           <div
-            v-for="t in trickers"
+            v-for="t in filteredTrickers()"
             :key="t.name"
             @click="select(t)"
             :class="{
@@ -207,6 +226,9 @@ export default {
       allTrickers: {},
       findSameTricker: [],
       error: [],
+      filter: ``,
+      page: 1,
+      hasNextPage: true,
     };
   },
   created: function () {
@@ -220,19 +242,25 @@ export default {
       }
     };
     fun();
+    const trickerData = localStorage.getItem("cryptomicon-list");
+    if (trickerData) {
+      this.trickers = JSON.parse(trickerData);
+      this.trickers.forEach((tricker) => {
+        this.subscribeToUpdate(tricker);
+      });
+    }
+    const windowData = Object.fromEntries(
+      new URL(window.location).searchParams.entries()
+    );
+    if (windowData.filter) {
+      this.filter = windowData.filter;
+    }
+    if (windowData.page) {
+      this.page = windowData.page;
+    }
   },
   methods: {
-    add() {
-      this.error = this.trickers.filter((t) => t.name == this.tricker);
-      console.log(this.error);
-      if (this.error.length) {
-        return false;
-      }
-      let newTricker = {
-        name: this.tricker,
-        price: `default`,
-      };
-      this.trickers.push(newTricker);
+    subscribeToUpdate(newTricker) {
       setInterval(async () => {
         const f = await fetch(
           `https://min-api.cryptocompare.com/data/price?fsym=${newTricker.name}&tsyms=USD&api_key=2aeadb95cfcedee9c60c65d0a38eddd5555762a57e6777184d588aac9a1cce48`
@@ -243,8 +271,23 @@ export default {
           this.graph.push(newTricker.price);
         }
       }, 5000);
+    },
+    add() {
+      this.error = this.trickers.filter((t) => t.name == this.tricker);
+      console.log(this.error);
+      if (this.error.length) {
+        return false;
+      }
+      let newTricker = {
+        name: this.tricker,
+        price: `default`,
+      };
+      this.subscribeToUpdate(newTricker);
+      this.trickers.push(newTricker);
       this.tricker = ``;
+      this.filter = ``;
       this.findSameTricker = [];
+      localStorage.setItem("cryptomicon-list", JSON.stringify(this.trickers));
     },
     deleteTricker(trickerToRemove) {
       this.trickers = this.trickers.filter((t) => t != trickerToRemove);
@@ -263,7 +306,41 @@ export default {
         (price) => 5 + ((price - minValue) * 95) / (maxValue - minValue) //на 0 делить нельзя, из-за этого если макс и мин одинаковые, не работает рисовка
       );
     },
-    changedInputText() {
+    findedSameTricker() {
+      return this.findSameTricker;
+    },
+    selectedSameTricker(tricker) {
+      console.log(tricker);
+      this.tricker = tricker.key;
+      this.add();
+    },
+    filteredTrickers() {
+      const start = (this.page - 1) * 6;
+      const end = this.page * 6;
+      const filteredTrickers = this.trickers.filter((tricker) =>
+        tricker.name.includes(this.filter)
+      );
+      this.hasNextPage = filteredTrickers.length > end;
+      return filteredTrickers.slice(start, end);
+    },
+  },
+  watch: {
+    filter() {
+      this.page = 1;
+      window.history.pushState(
+        null,
+        document.title,
+        `${window.location.pathname}?filter=${this.filter}&page=${this.page}`
+      );
+    },
+    page() {
+      window.history.pushState(
+        null,
+        document.title,
+        `${window.location.pathname}?filter=${this.filter}&page=${this.page}`
+      );
+    },
+    tricker() {
       if (this.tricker.length == 0) {
         this.findSameTricker = [];
       }
@@ -294,14 +371,6 @@ export default {
           }
         }
       }
-    },
-    findedSameTricker() {
-      return this.findSameTricker;
-    },
-    selectedSameTricker(tricker) {
-      console.log(tricker);
-      this.tricker = tricker.key;
-      this.add();
     },
   },
 };
