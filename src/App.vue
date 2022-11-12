@@ -34,7 +34,7 @@
             <div class="mt-1 relative rounded-md shadow-md">
               <input
                 @keydown.enter="add()"
-                v-model="tricker"
+                v-model="ticker"
                 type="text"
                 name="wallet"
                 id="wallet"
@@ -43,13 +43,13 @@
               />
               <label>
                 <button
-                  v-for="tricker in findedSameTricker()"
-                  :key="tricker.key"
-                  @click="selectedSameTricker(tricker)"
+                  v-for="ticker in findedSameTicker"
+                  :key="ticker.key"
+                  @click="selectSameTicker(ticker)"
                   type="button"
                   class="my-4 inline-flex items-center py-2 px-4 border border-transparent shadow-sm text-sm leading-4 font-medium rounded-full text-white bg-gray-600 hover:bg-gray-700 transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
                 >
-                  {{ tricker.key }}
+                  {{ ticker.key }}
                 </button>
               </label>
               <label v-if="error.length != 0" class="text-red-500"
@@ -104,7 +104,7 @@
           Добавить
         </button>
       </section>
-      <template v-if="trickers.length > 0">
+      <template v-if="tickers.length > 0">
         <div class="row">
           <label for="wallet" class="block text-sm font-medium text-gray-700"
             >Фильтр</label
@@ -128,11 +128,11 @@
         <hr class="w-full border-t border-gray-600 my-4" />
         <dl class="mt-5 grid grid-cols-1 gap-5 sm:grid-cols-3">
           <div
-            v-for="t in filteredTrickers()"
+            v-for="t in paginatedTickers"
             :key="t.name"
             @click="select(t)"
             :class="{
-              'border-4': sel == t,
+              'border-4': selectedTicker == t,
             }"
             class="bg-white overflow-hidden shadow rounded-lg border-purple-800 border-solid cursor-pointer"
           >
@@ -146,7 +146,7 @@
             </div>
             <div class="w-full border-t border-gray-200"></div>
             <button
-              @click.stop="deleteTricker(t)"
+              @click.stop="deleteTicker(t)"
               class="flex items-center justify-center font-medium w-full bg-gray-100 px-4 py-4 sm:px-6 text-md text-gray-500 hover:text-gray-600 hover:bg-gray-200 hover:opacity-20 transition-all focus:outline-none"
             >
               <svg
@@ -167,13 +167,13 @@
           </div>
         </dl>
         <hr class="w-full border-t border-gray-600 my-4" />
-        <section v-if="sel" class="relative">
+        <section v-if="selectedTicker" class="relative">
           <h3 class="text-lg leading-6 font-medium text-gray-900 my-8">
-            {{ sel.name }} - USD
+            {{ selectedTicker.name }} - USD
           </h3>
           <div class="flex items-end border-gray-600 border-b border-l h-64">
             <div
-              v-for="(bar, idx) in normalizeGraph()"
+              v-for="(bar, idx) in normalizedGraph"
               :key="idx"
               :style="{
                 height: `${bar}%`,
@@ -182,7 +182,7 @@
             ></div>
           </div>
           <button
-            @click="sel = null"
+            @click="selectedTicker = null"
             type="button"
             class="absolute top-0 right-0"
           >
@@ -215,20 +215,28 @@
 </template>
 
 <script>
+//[x] 6. Наличие в состоянии ЗАВИСИМЫХ ДАННЫХ || Критичность: 5+
+//[ ] 6. ЗАпросы напрямую внутри компонента (???) || Критичность: 5
+//[ ] 6. При удалении остаётся подписка на загрузку тикера || Критичность: 5
+//[ ] 6. Обработка ошибок API  || Критичность: 5
+//[ ] 6. Количество запросов (для каждого тикера, а можно было бы все сразу) || Критичность: 4
+//[x] 6. При удалении тикера не изменяется localStorgae || Критичность: 4
+//[x] 6. Одиаковый код в watch || Критичность: 3
+//[ ] 6. localStorage и анонимные влкадки (когда анон, память не доступен) || Критичность: 3
+//[ ] 6. График ужасно выглядит если будет много цен || Критичность: 2
+//[ ]  6. Магические строки и чиста (URL, 5000 милисекунд задержки, ключ локал стораджа, количество на странице ) || Критичность: 1
 export default {
   name: "App",
   data() {
     return {
-      tricker: `default`,
-      trickers: [],
-      sel: null,
+      ticker: `default`,
+      tickers: [],
+      selectedTicker: null,
       graph: [],
-      allTrickers: {},
-      findSameTricker: [],
+      allTickers: {},
       error: [],
       filter: ``,
       page: 1,
-      hasNextPage: true,
     };
   },
   created: function () {
@@ -238,15 +246,15 @@ export default {
       );
       const data = await f.json();
       if (data.Data) {
-        this.allTrickers = data.Data;
+        this.allTickers = data.Data;
       }
     };
     fun();
-    const trickerData = localStorage.getItem("cryptomicon-list");
-    if (trickerData) {
-      this.trickers = JSON.parse(trickerData);
-      this.trickers.forEach((tricker) => {
-        this.subscribeToUpdate(tricker);
+    const tickerData = localStorage.getItem("cryptomicon-list");
+    if (tickerData) {
+      this.tickers = JSON.parse(tickerData);
+      this.tickers.forEach((ticker) => {
+        this.subscribeToUpdate(ticker);
       });
     }
     const windowData = Object.fromEntries(
@@ -256,121 +264,140 @@ export default {
       this.filter = windowData.filter;
     }
     if (windowData.page) {
-      this.page = windowData.page;
+      this.page = Number(windowData.page);
     }
   },
-  methods: {
-    subscribeToUpdate(newTricker) {
-      setInterval(async () => {
-        const f = await fetch(
-          `https://min-api.cryptocompare.com/data/price?fsym=${newTricker.name}&tsyms=USD&api_key=2aeadb95cfcedee9c60c65d0a38eddd5555762a57e6777184d588aac9a1cce48`
-        );
-        const data = await f.json();
-        newTricker.price = data.USD;
-        if (newTricker == this.sel) {
-          this.graph.push(newTricker.price);
+  computed: {
+    findedSameTicker() {
+      if (this.ticker.length == 0) {
+        return [];
+      }
+      let findSameTicker = [];
+      const keys = Object.keys(this.allTickers);
+      for (let i = 0; i < keys.length; i++) {
+        if (keys[i].toLowerCase().indexOf(this.ticker) == 0) {
+          findSameTicker.push({
+            key: keys[i],
+            name: this.allTickers[keys[i]],
+          });
+        } else if (
+          this.allTickers[keys[i]].FullName.toLowerCase().indexOf(
+            this.ticker
+          ) == 0
+        ) {
+          findSameTicker.push({
+            key: keys[i],
+            name: this.allTickers[keys[i]],
+          });
         }
-      }, 5000);
-    },
-    add() {
-      this.error = this.trickers.filter((t) => t.name == this.tricker);
-      console.log(this.error);
-      if (this.error.length) {
-        return false;
+        if (findSameTicker.length == 4) {
+          break;
+        }
       }
-      let newTricker = {
-        name: this.tricker,
-        price: `default`,
-      };
-      this.subscribeToUpdate(newTricker);
-      this.trickers.push(newTricker);
-      this.tricker = ``;
-      this.filter = ``;
-      this.findSameTricker = [];
-      localStorage.setItem("cryptomicon-list", JSON.stringify(this.trickers));
+      return findSameTicker;
     },
-    deleteTricker(trickerToRemove) {
-      this.trickers = this.trickers.filter((t) => t != trickerToRemove);
-      if (trickerToRemove == this.sel) {
-        this.sel = null;
-      }
+    startIndex() {
+      return (this.page - 1) * 6;
     },
-    select(tricker) {
-      this.sel = tricker;
-      this.graph = [];
+    endIndex() {
+      return this.page * 6;
     },
-    normalizeGraph() {
+    filteredTickers() {
+      return this.tickers.filter((ticker) => ticker.name.includes(this.filter));
+    },
+    paginatedTickers() {
+      return this.filteredTickers.slice(this.startIndex, this.endIndex);
+    },
+    hasNextPage() {
+      return this.filteredTickers.length > this.endIndex;
+    },
+    normalizedGraph() {
       const maxValue = Math.max(...this.graph);
       const minValue = Math.min(...this.graph);
+      if (maxValue == minValue) {
+        return this.graph.map(() => 50);
+      }
       return this.graph.map(
         (price) => 5 + ((price - minValue) * 95) / (maxValue - minValue) //на 0 делить нельзя, из-за этого если макс и мин одинаковые, не работает рисовка
       );
     },
-    findedSameTricker() {
-      return this.findSameTricker;
+    pageStateOptions() {
+      return { filter: this.filter, page: this.page };
     },
-    selectedSameTricker(tricker) {
-      console.log(tricker);
-      this.tricker = tricker.key;
+  },
+  methods: {
+    subscribeToUpdate(newTicker) {
+      setInterval(async () => {
+        const f = await fetch(
+          `https://min-api.cryptocompare.com/data/price?fsym=${newTicker.name}&tsyms=USD&api_key=2aeadb95cfcedee9c60c65d0a38eddd5555762a57e6777184d588aac9a1cce48`
+        );
+        const data = await f.json();
+        newTicker.price = data.USD;
+        if (newTicker == this.selectedTicker) {
+          this.graph.push(newTicker.price);
+        }
+      }, 5000);
+    },
+    add() {
+      this.error = this.tickers.filter((t) => t.name == this.ticker);
+      if (this.error.length) {
+        return false;
+      }
+      let newTicker = {
+        name: this.ticker,
+        price: `default`,
+      };
+      this.subscribeToUpdate(newTicker);
+      this.tickers = [...this.tickers, newTicker]; //путь реакта, обновить ссылку this.tickers
+      this.ticker = ``;
+      this.filter = ``;
+      this.findSameTicker = [];
+    },
+    deleteTicker(tickerToRemove) {
+      this.tickers = this.tickers.filter((t) => t != tickerToRemove);
+      if (tickerToRemove == this.selectedTicker) {
+        this.selectedTicker = null;
+      }
+    },
+    select(ticker) {
+      this.selectedTicker = ticker;
+    },
+    selectSameTicker(ticker) {
+      this.ticker = ticker.key;
       this.add();
-    },
-    filteredTrickers() {
-      const start = (this.page - 1) * 6;
-      const end = this.page * 6;
-      const filteredTrickers = this.trickers.filter((tricker) =>
-        tricker.name.includes(this.filter)
-      );
-      this.hasNextPage = filteredTrickers.length > end;
-      return filteredTrickers.slice(start, end);
     },
   },
   watch: {
+    tickers(newValue, oldValue) {
+      // newValue, oldValue Крутая штука, но при добавлении в массив не работает, при удалении с массива работает
+      if (newValue.length > oldValue.length) {
+        this.ticker = ``;
+        this.filter = ``;
+        this.findSameTicker = [];
+      }
+      localStorage.setItem("cryptomicon-list", JSON.stringify(this.tickers));
+    },
+    selectedTicker() {
+      this.graph = [];
+    },
+    paginatedTickers() {
+      //paginatedTickers(newValue, oldValue) Крутая штука, но при добавлении в массив не работает, при удалении с массива работает
+      if (this.paginatedTickers.length == 0 && this.page > 1) {
+        this.page -= 1;
+      }
+    },
     filter() {
       this.page = 1;
+    },
+    pageStateOptions(value) {
       window.history.pushState(
         null,
         document.title,
-        `${window.location.pathname}?filter=${this.filter}&page=${this.page}`
+        `${window.location.pathname}?filter=${value.filter}&page=${value.page}`
       );
     },
-    page() {
-      window.history.pushState(
-        null,
-        document.title,
-        `${window.location.pathname}?filter=${this.filter}&page=${this.page}`
-      );
-    },
-    tricker() {
-      if (this.tricker.length == 0) {
-        this.findSameTricker = [];
-      }
-      if (this.tricker != "" && this.tricker != "default") {
-        this.error = [];
-        this.findSameTricker = [];
-        const keys = Object.keys(this.allTrickers);
-        for (let i = 0; i < keys.length; i++) {
-          if (keys[i].toLowerCase().indexOf(this.tricker) == 0) {
-            this.findSameTricker.push({
-              key: keys[i],
-              name: this.allTrickers[keys[i]],
-            });
-            console.log(keys[i]);
-          } else if (
-            this.allTrickers[keys[i]].FullName.toLowerCase().indexOf(
-              this.tricker
-            ) == 0
-          ) {
-            this.findSameTricker.push({
-              key: keys[i],
-              name: this.allTrickers[keys[i]],
-            });
-            console.log(this.allTrickers[keys[i]].FullName);
-          }
-          if (this.findSameTricker.length == 4) {
-            break;
-          }
-        }
-      }
+    ticker() {
+      this.error = [];
     },
   },
 };
