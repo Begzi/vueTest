@@ -141,7 +141,7 @@
                 {{ t.name }} - USD
               </dt>
               <dd class="mt-1 text-3xl font-semibold text-gray-900">
-                {{ t.price }}
+                {{ formatPrice(t.price) }}
               </dd>
             </div>
             <div class="w-full border-t border-gray-200"></div>
@@ -225,6 +225,7 @@
 //[ ] 6. localStorage и анонимные влкадки (когда анон, память не доступен) || Критичность: 3
 //[ ] 6. График ужасно выглядит если будет много цен || Критичность: 2
 //[ ]  6. Магические строки и чиста (URL, 5000 милисекунд задержки, ключ локал стораджа, количество на странице ) || Критичность: 1
+import { subscribeToTicker, unsubscribeToTicker, getAllTickers } from "./api";
 export default {
   name: "App",
   data() {
@@ -240,22 +241,20 @@ export default {
     };
   },
   created: function () {
-    const fun = async () => {
-      const f = await fetch(
-        `https://min-api.cryptocompare.com/data/all/coinlist?summary=true`
-      );
-      const data = await f.json();
-      if (data.Data) {
-        this.allTickers = data.Data;
-      }
+    const updateAllTickers = async () => {
+      this.allTickers = await getAllTickers();
     };
-    fun();
+    updateAllTickers();
     const tickerData = localStorage.getItem("cryptomicon-list");
     if (tickerData) {
       this.tickers = JSON.parse(tickerData);
-      this.tickers.forEach((ticker) => {
-        this.subscribeToUpdate(ticker);
-      });
+      this.tickers.forEach((ticker) =>
+        subscribeToTicker(ticker.name, (newPrice) => {
+          //Для каждого тикера подписываемся на обновление, отправляем название тикера и функция
+          //Которая должна быть испольнена, когда придёт обновлённые данные
+          this.updateTicker(ticker.name, newPrice);
+        })
+      );
     }
     const windowData = Object.fromEntries(
       new URL(window.location).searchParams.entries()
@@ -326,17 +325,19 @@ export default {
     },
   },
   methods: {
-    subscribeToUpdate(newTicker) {
-      setInterval(async () => {
-        const f = await fetch(
-          `https://min-api.cryptocompare.com/data/price?fsym=${newTicker.name}&tsyms=USD&api_key=2aeadb95cfcedee9c60c65d0a38eddd5555762a57e6777184d588aac9a1cce48`
-        );
-        const data = await f.json();
-        newTicker.price = data.USD;
-        if (newTicker == this.selectedTicker) {
-          this.graph.push(newTicker.price);
-        }
-      }, 5000);
+    formatPrice(price) {
+      if (price == "-" || price == "default") {
+        return "-";
+      }
+      return price > 1 ? price.toFixed(2) : price.toPrecision(2);
+    },
+    updateTicker(tickerName, newPrice) {
+      //Будет вызвана из api.js когда дойдёт очередь
+      this.tickers
+        .filter((ticker) => ticker.name == tickerName)
+        .forEach((ticker) => {
+          ticker.price = newPrice;
+        });
     },
     add() {
       this.error = this.tickers.filter((t) => t.name == this.ticker);
@@ -347,7 +348,11 @@ export default {
         name: this.ticker,
         price: `default`,
       };
-      this.subscribeToUpdate(newTicker);
+      subscribeToTicker(newTicker.name, (newPrice) => {
+        //Для добавленного тикера подписываемся на обновление, отправляем название тикера и функция
+        //Которая должна быть испольнена, когда придёт обновлённые данные
+        this.updateTicker(newTicker.name, newPrice);
+      });
       this.tickers = [...this.tickers, newTicker]; //путь реакта, обновить ссылку this.tickers
       this.ticker = ``;
       this.filter = ``;
@@ -358,6 +363,7 @@ export default {
       if (tickerToRemove == this.selectedTicker) {
         this.selectedTicker = null;
       }
+      unsubscribeToTicker(tickerToRemove.name);
     },
     select(ticker) {
       this.selectedTicker = ticker;

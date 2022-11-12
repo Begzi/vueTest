@@ -1,3 +1,3 @@
 module.exports = {
-  trailingcomma: "all",
+  trailingcomma: "es5",
 };
